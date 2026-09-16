@@ -14,15 +14,19 @@
 //     the shipped file silently diverges.
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { readFileSync, statSync } from "node:fs";
+import { readFileSync, readdirSync, statSync } from "node:fs";
 import { fileURLToPath } from "node:url";
 
 const ROOT = new URL("..", import.meta.url);
 const ARTIFACT = fileURLToPath(new URL("client/client.js", ROOT));
-const SOURCES = [
-	"client/src/index.js",
-	"client/src/palette.js",
-].map((relative) => fileURLToPath(new URL(relative, ROOT)));
+const SOURCE_DIR = fileURLToPath(new URL("client/src", ROOT));
+
+// Discovered, not enumerated. A hand-written list is exactly the kind of guard
+// that fails open: adding `client/src/switcher.js` to the bundle would keep this
+// test green while the new file went unguarded, so the directory is the list.
+const SOURCES = readdirSync(SOURCE_DIR)
+	.filter((name) => name.endsWith(".js"))
+	.map((name) => `${SOURCE_DIR}/${name}`);
 
 test("the artifact is not older than the sources it was built from", () => {
 	const built = statSync(ARTIFACT).mtimeMs;
@@ -38,7 +42,6 @@ test("the artifact is not older than the sources it was built from", () => {
 /** Install the minimum globals the bundle touches at load and at apply time. */
 function installStubs() {
 	const head = [];
-	const listeners = new Map();
 	const previous = {
 		window: Object.getOwnPropertyDescriptor(globalThis, "window"),
 		document: Object.getOwnPropertyDescriptor(globalThis, "document"),
@@ -50,21 +53,37 @@ function installStubs() {
 		getItem: (key) => (stored.has(key) ? stored.get(key) : null),
 		setItem: (key, value) => void stored.set(key, String(value)),
 	};
+
+	// An element stand-in carrying the surface the bundle actually uses. Kept
+	// deliberately small: every property here is one the plugin would touch in a
+	// real browser too, so this doubles as a list of what it depends on.
+	const element = () => ({
+		id: "",
+		textContent: "",
+		style: {},
+		dataset: {},
+		type: "",
+		accept: "",
+		value: "",
+		files: [],
+		handlers: {},
+		addEventListener(type, handler) {
+			(this.handlers[type] ??= []).push(handler);
+		},
+		click() {},
+		remove() {
+			const at = head.indexOf(this);
+			if (at >= 0) head.splice(at, 1);
+		},
+	});
+
 	globalThis.document = {
 		head: { appendChild: (node) => void head.push(node) },
-		createElement: () => ({
-			id: "",
-			textContent: "",
-			remove() {
-				const at = head.indexOf(this);
-				if (at >= 0) head.splice(at, 1);
-			},
-		}),
+		createElement: element,
 	};
 
 	return {
 		head,
-		listeners,
 		restore() {
 			for (const [key, descriptor] of Object.entries(previous)) {
 				if (descriptor === undefined) delete globalThis[key];

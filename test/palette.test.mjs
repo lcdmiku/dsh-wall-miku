@@ -5,7 +5,7 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
 
-import { srgbToOklch, oklchToSrgb, extractDominantColor, deriveAccents } from "../client/src/palette.js";
+import { srgbToOklch, oklchToSrgb, extractDominantColor, deriveAccents, toHex, fromHex, parseRgb as parseAccentRgb } from "../client/src/palette.js";
 
 /**
  * Build RGBA pixel data for a test image.
@@ -327,4 +327,59 @@ test("extreme primaries still produce usable accents", () => {
 			`rgb(${primary.r},${primary.g},${primary.b}) darkAccent only ${contrastRatio(dark, DARK_SURFACE).toFixed(2)}:1`,
 		);
 	}
+});
+
+// ---- colour formatting ----------------------------------------------------
+// The picker speaks a different dialect from the token layer: an <input
+// type="color"> reads and writes "#rrggbb", while the accents are stored as
+// "r, g, b" so they can be interpolated into rgba(...).
+
+test("an RGB triple survives a round trip through hex", () => {
+	for (const rgb of [
+		{ r: 0, g: 0, b: 0 },
+		{ r: 255, g: 255, b: 255 },
+		{ r: 74, g: 158, b: 255 },
+		{ r: 251, g: 113, b: 133 },
+	]) {
+		assert.deepEqual(fromHex(toHex(rgb)), rgb);
+	}
+});
+
+test("hex is the six-digit lowercase form a colour input expects", () => {
+	assert.equal(toHex({ r: 74, g: 158, b: 255 }), "#4a9eff");
+	assert.equal(toHex({ r: 0, g: 0, b: 0 }), "#000000");
+	assert.equal(toHex({ r: 255, g: 255, b: 255 }), "#ffffff");
+});
+
+test("hex parsing accepts what a colour input emits, case included", () => {
+	assert.deepEqual(fromHex("#4A9EFF"), { r: 74, g: 158, b: 255 });
+	assert.deepEqual(fromHex("#000000"), { r: 0, g: 0, b: 0 });
+});
+
+test("a malformed colour is refused rather than half-parsed", () => {
+	// Found by the switcher's own integration test, not by reasoning: the picker
+	// can hand over an empty string, and `parseInt("")` is NaN. NaN then reaches
+	// the chroma search in deriveAccent, which steps toward zero and cannot get
+	// there from NaN -- so a bad colour did not merely look wrong, it never
+	// returned, and the tab hung.
+	for (const bad of ["", "#", "#12", "#12345", "#1234567", "rgb(1,2,3)", "blue", undefined, null, 42]) {
+		assert.throws(() => fromHex(bad), TypeError, `fromHex(${JSON.stringify(bad)}) must refuse`);
+	}
+});
+
+test("a non-finite primary still yields accents instead of spinning forever", () => {
+	// The same hang, reached from the other direction: whatever the caller did to
+	// produce a NaN channel, the derivation must still terminate. If the guard in
+	// deriveAccent were removed this test would not fail, it would never finish.
+	const accents = deriveAccents({ r: Number.NaN, g: Number.NaN, b: Number.NaN });
+	for (const [role, value] of Object.entries(accents)) {
+		assert.equal(typeof value, "string", role);
+		assert.match(value, /^\d+, \d+, \d+$/, `${role} must still be an "r, g, b" triple`);
+	}
+});
+
+test("the stored accent format parses back to a colour", () => {
+	// This is the exact string shape aliasTokens interpolates into rgba().
+	assert.deepEqual(parseAccentRgb("74, 158, 255"), { r: 74, g: 158, b: 255 });
+	assert.deepEqual(parseAccentRgb("0, 0, 0"), { r: 0, g: 0, b: 0 });
 });
