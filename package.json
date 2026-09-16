@@ -29,7 +29,7 @@
     ],
     "scripts": {
         "build": "esbuild client/src/index.js --bundle --format=iife --external:react --outfile=client/client.js",
-        "test": "node --test",
+        "test": "node --test --experimental-test-isolation=none",
         "prepublishOnly": "npm run build"
     },
     "dsh": {
@@ -58,6 +58,9 @@
     "devDependencies": {
         "@types/node": "^26.5.1",
         "esbuild": "^0.28.2",
-        "fake-indexeddb": "^6.2.5"
+        "fake-indexeddb": "^6.2.5",
+        "jsdom": "^29.1.1",
+        "react": "^19.3.0",
+        "react-dom": "^19.3.0"
     }
 }
