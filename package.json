@@ -1,8 +1,56 @@
 {
-    "name": "dsh-skin",
+    "name": "dsh-skin-miku",
     "version": "0.1.0",
     "description": "skin of DeepseekHarness",
     "type": "module",
     "main": "index.mjs",
-    "license": "MIT"
+    "license": "MIT",
+    "keywords": [
+        "deepseek",
+        "harness",
+        "dsh",
+        "dsh-plugin",
+        "theme",
+        "skin"
+    ],
+    "exports": {
+        ".": "./index.mjs",
+        "./client": "./client/client.js",
+        "./cordis.patch.yml": "./cordis.patch.yml",
+        "./package.json": "./package.json"
+    },
+    "files": [
+        "index.mjs",
+        "client",
+        "asserts",
+        "cordis.patch.yml",
+        "README.md",
+        "LICENCE"
+    ],
+    "dsh": {
+        "bundle": {
+            "patch": "./cordis.patch.yml"
+        },
+        "client": {
+            "platform": "web",
+            "inject": [
+                "@deepseek-ai/dsh-client-ui-theme"
+            ]
+        }
+    },
+    "repository": {
+        "type": "git",
+        "url": "git+https://github.com/lcdmiku/dsh-wall-miku.git"
+    },
+    "author": "akalin",
+    "engines": {
+        "node": ">=22"
+    },
+    "bugs": {
+        "url": "https://github.com/lcdmiku/dsh-wall-miku/issues"
+    },
+    "homepage": "https://github.com/lcdmiku/dsh-wall-miku#README",
+    "devDependencies": {
+        "@types/node": "^26.5.1"
+    }
 }
