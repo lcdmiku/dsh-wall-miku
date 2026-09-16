@@ -1,4 +1,4 @@
-window.__ModuleLoader__.load({ id: "dsh-skin-nebula", factory: (require) => {
+window.__ModuleLoader__.load({ id: "dsh-skin-miku", factory: (require) => {
   var module = { exports: {} };
   var exports = module.exports;
   Object.defineProperty(exports, Symbol.toStringTag, { value: "Module" });
@@ -137,13 +137,13 @@ function staticTokens(k) {
 	function backdropCss(skin) {
 		return [
 			"body {",
-			`  background-image: linear-gradient(rgba(247, 250, 255, 0), rgba(247, 250, 255, 0.15)), url('/skin-nebula/${skin.images.light}');`,
+			`  background-image: linear-gradient(rgba(247, 250, 255, 0), rgba(247, 250, 255, 0.15)), url('/skin-miku/${skin.images.light}');`,
 			"  background-size: cover;",
 			"  background-position: center;",
 			"  background-attachment: fixed;",
 			"}",
 			"body[data-ds-dark-theme] {",
-			`  background-image: linear-gradient(rgba(4, 6, 14, 0.02), rgba(4, 6, 14, 0.22)), url('/skin-nebula/${skin.images.dark}');`,
+			`  background-image: linear-gradient(rgba(4, 6, 14, 0.02), rgba(4, 6, 14, 0.22)), url('/skin-miku/${skin.images.dark}');`,
 			"}",
 		].join("\n");
 	}

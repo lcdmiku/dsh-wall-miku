@@ -2,7 +2,7 @@ import { createReadStream, statSync } from "node:fs"
 import { join } from "node:path"
 import { fileURLToPath } from "node:url";
 
-const ASSETS_DIR = fileURLToPath(new URL("./asserts/",import.meta.url));
+const ASSETS_DIR = fileURLToPath(new URL("./assets/",import.meta.url));
 
 const ROUTE_PREFIX = "/skin-miku"
 const CONTENT_TYPES = {
