@@ -50,6 +50,30 @@ const SKINS = [
 
 
 
+// The resolved shape every skin is rendered from, built-in or user-imported.
+// It exists so the token layer and the backdrop stylesheet never learn where an
+// image came from: a built-in names a file on the plugin's own route, a custom
+// skin hands over a blob URL, and both are just a string here.
+const ASSET_PREFIX = "/skin-miku";
+
+function resolveBuiltIn(skin) {
+	return {
+		id: skin.id,
+		accent: {
+			darkAccent: skin.darkAccent,
+			darkAccentSoft: skin.darkAccentSoft,
+			lightAccent: skin.lightAccent,
+			lightAccentDeep: skin.lightAccentDeep,
+		},
+		imageUrls: {
+			light: `${ASSET_PREFIX}/${skin.images.light}`,
+			dark: `${ASSET_PREFIX}/${skin.images.dark}`,
+		},
+	};
+}
+
+const BUILT_IN = SKINS.map(resolveBuiltIn);
+
 // ----- static scale(shared by all skins)
 function staticTokens(k) {
 		// s(): surface alpha scaled by the user's transparency factor, capped
@@ -74,9 +98,9 @@ function staticTokens(k) {
 // ---- alias layer ---------------------------------------------------------
 	// Shared translucent surfaces plus the skin's accent family. Every value is
 	// a { light, dark } pair so neither scheme bleeds into the other.
-	function aliasTokens(skin, k) {
-		const dk = (a) => `rgba(${skin.darkAccent}, ${a})`;
-		const lt = (a) => `rgba(${skin.lightAccent}, ${a})`;
+	function aliasTokens(accent, k) {
+		const dk = (a) => `rgba(${accent.darkAccent}, ${a})`;
+		const lt = (a) => `rgba(${accent.lightAccent}, ${a})`;
 		// surface alphas follow the transparency factor; accent tints do not
 		const s = (rgb, a) => `rgba(${rgb}, ${Math.min(0.98, a * k).toFixed(3)})`;
 		// overlay surfaces scale too but keep a readability floor
@@ -101,9 +125,9 @@ function staticTokens(k) {
 			"--dsw-alias-border-l3": { light: lt(0.32), dark: dk(0.30) },
 			"--dsw-alias-border-l4": { light: lt(0.45), dark: dk(0.42) },
 			// brand + primary actions
-			"--dsw-alias-brand-primary": { light: `rgb(${skin.lightAccent})`, dark: `rgb(${skin.darkAccent})` },
-			"--dsw-alias-brand-text": { light: `rgb(${skin.lightAccentDeep})`, dark: `rgb(${skin.darkAccentSoft})` },
-			"--dsw-alias-button-primary-hover": { light: `rgb(${skin.lightAccentDeep})`, dark: `rgb(${skin.darkAccentSoft})` },
+			"--dsw-alias-brand-primary": { light: `rgb(${accent.lightAccent})`, dark: `rgb(${accent.darkAccent})` },
+			"--dsw-alias-brand-text": { light: `rgb(${accent.lightAccentDeep})`, dark: `rgb(${accent.darkAccentSoft})` },
+			"--dsw-alias-button-primary-hover": { light: `rgb(${accent.lightAccentDeep})`, dark: `rgb(${accent.darkAccentSoft})` },
 			"--dsw-alias-button-primary-dimmed": { light: lt(0.45), dark: dk(0.45) },
 			// secondary buttons and hovers
 			"--dsw-alias-button-elevated-fill": { light: s("255, 255, 255", 0.70), dark: s("24, 33, 60", 0.75) },
@@ -120,7 +144,7 @@ function staticTokens(k) {
 			"--dsw-alias-interactive-bg-hover-solid": { light: "rgba(228, 240, 250, 0.95)", dark: "rgba(28, 38, 68, 0.95)" },
 			// text: subtle cool cast on secondary roles only; primary stays stock
 			"--dsw-alias-label-secondary": { light: "rgb(75, 94, 112)", dark: "rgb(163, 184, 205)" },
-			"--dsw-alias-label-primary-bluish": { light: `rgb(${skin.lightAccentDeep})`, dark: `rgb(${skin.darkAccentSoft})` },
+			"--dsw-alias-label-primary-bluish": { light: `rgb(${accent.lightAccentDeep})`, dark: `rgb(${accent.darkAccentSoft})` },
 			// markdown/code surfaces
 			"--dsw-alias-markdown-code-block": { light: s("240, 246, 254", 0.75), dark: s("9, 13, 27", 0.72) },
 			"--dsw-alias-markdown-code-block-banner": { light: s("230, 240, 252", 0.85), dark: s("14, 19, 38", 0.85) },
@@ -134,16 +158,16 @@ function staticTokens(k) {
 	}
 // The backdrop is body-level so it needs no product DOM selectors; the theme
 	// presenter owns body[data-ds-dark-theme], which doubles as the scheme switch.
-	function backdropCss(skin) {
+	function backdropCss(imageUrls) {
 		return [
 			"body {",
-			`  background-image: linear-gradient(rgba(247, 250, 255, 0), rgba(247, 250, 255, 0.15)), url('/skin-miku/${skin.images.light}');`,
+			`  background-image: linear-gradient(rgba(247, 250, 255, 0), rgba(247, 250, 255, 0.15)), url('${imageUrls.light}');`,
 			"  background-size: cover;",
 			"  background-position: center;",
 			"  background-attachment: fixed;",
 			"}",
 			"body[data-ds-dark-theme] {",
-			`  background-image: linear-gradient(rgba(4, 6, 14, 0.02), rgba(4, 6, 14, 0.22)), url('/skin-miku/${skin.images.dark}');`,
+			`  background-image: linear-gradient(rgba(4, 6, 14, 0.02), rgba(4, 6, 14, 0.22)), url('${imageUrls.dark}');`,
 			"}",
 		].join("\n");
 	}
@@ -213,7 +237,7 @@ function staticTokens(k) {
 	}
 
 	function apply(ctx) {
-		let current = SKINS.find((s) => s.id === localStorage.getItem(STORAGE_KEY)) ?? SKINS[0];
+		let current = BUILT_IN.find((s) => s.id === localStorage.getItem(STORAGE_KEY)) ?? BUILT_IN[0];
 		const storedOpacity = Number(localStorage.getItem(OPACITY_KEY));
 		let opacity = Number.isFinite(storedOpacity) && localStorage.getItem(OPACITY_KEY) !== null
 			? Math.min(100, Math.max(0, storedOpacity))
@@ -234,9 +258,9 @@ function staticTokens(k) {
 			const k = opacityFactor(opacity);
 			disposeTokens = ctx.theme.overrideTokens("dsh-skin-miku", {
 				...staticTokens(k),
-				...aliasTokens(skin, k),
+				...aliasTokens(skin.accent, k),
 			});
-			backdropTag.textContent = backdropCss(skin);
+			backdropTag.textContent = backdropCss(skin.imageUrls);
 			for (const notify of listeners) notify();
 		};
 
@@ -266,7 +290,7 @@ function staticTokens(k) {
 				listeners.add(forceRender);
 				return () => listeners.delete(forceRender);
 			}, []);
-			const items = SKINS.map((skin) => React.createElement("button", {
+			const items = BUILT_IN.map((skin) => React.createElement("button", {
 				key: skin.id,
 				className: "dshSkinSwitcherItem",
 				"data-active": skin === current ? "" : undefined,
@@ -276,7 +300,7 @@ function staticTokens(k) {
 					setOpen(false);
 				},
 			},
-				React.createElement("span", { className: "dshSkinSwitcherDot", style: { background: `rgb(${skin.darkAccent})` } }),
+				React.createElement("span", { className: "dshSkinSwitcherDot", style: { background: `rgb(${skin.accent.darkAccent})` } }),
 				t(`skin.${skin.id}`),
 				skin === current ? React.createElement("span", { className: "dshSkinSwitcherCheck" }, "✓") : null,
 			));

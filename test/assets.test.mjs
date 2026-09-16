@@ -59,13 +59,17 @@ function request(route, pathname) {
 }
 
 /**
- * The route prefixes the web half builds its backdrop URLs from. The URLs are
- * template literals, so the filename is not yet substituted here — only the
- * prefix is literal enough to compare against the host's route.
+ * The asset prefix the web half builds its backdrop URLs from. It used to be
+ * visible as a literal inside the CSS `url(...)`; it now lives in a named
+ * constant, because a custom skin's image is a blob URL sharing no prefix with
+ * the built-ins. The coupling to the host route is unchanged -- only its
+ * spelling moved -- so this reads the constant instead of the CSS.
  */
-function clientRoutePrefixes() {
+function clientAssetPrefix() {
 	const source = readFileSync(`${ROOT}client/client.js`, "utf8");
-	return [...new Set([...source.matchAll(/url\(['"](\/[^/'"]+)\//g)].map((match) => match[1]))];
+	const match = /ASSET_PREFIX\s*=\s*"([^"]+)"/.exec(source);
+	assert.notEqual(match, null, "client/client.js declares no ASSET_PREFIX -- did the build run?");
+	return match[1];
 }
 
 /** The asset filenames the web half references. */
@@ -82,11 +86,8 @@ test("the host half registers exactly one asset route", () => {
 
 test("the client builds its backdrop URLs from the host's route prefix", () => {
 	const [route] = mountRoutes();
-	const prefixes = clientRoutePrefixes();
-	assert.ok(prefixes.length > 0, "client CSS embeds no backdrop URLs at all");
-	for (const prefix of prefixes) {
-		assert.equal(prefix, route.path, `client requests ${prefix}/…, but the host serves ${route.path}/…`);
-	}
+	const prefix = clientAssetPrefix();
+	assert.equal(prefix, route.path, `client requests ${prefix}/…, but the host serves ${route.path}/…`);
 });
 
 test("every asset the client references is served by the registered route", async () => {
