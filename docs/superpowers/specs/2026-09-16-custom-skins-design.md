@@ -43,7 +43,7 @@
 
 4. **本仓库没有 IndexedDB / Cache API / 文件系统访问的先例**，也没有 `ctx.storage` 这类浏览器侧存储服务。`packages/client` 里唯一的浏览器本地持久化是 `localStorage`（JSON，~5MB），`URL.createObjectURL` 只被当作临时预览用（`ui-conversation/src/client/service.ts:77,602` 等）。
 
-5. **桌面端主窗口的源是 `dsh-app://app/index.html`**（`apps/desktop/src/main.ts:26,173`），自定义 scheme 注册为 `standard: true, secure: true, supportFetchAPI: true`（同文件 45-50）——是真实元组源而非不透明源。**且 `localStorage` 在该源下已正常工作**（现有的皮肤选择与透明度就是靠它持久化的），不透明源连 `localStorage` 都会失效。这是 IndexedDB 可用的强证据，但**不是证据本身**，见风险 1。
+5. **桌面端主窗口的源是 `dsh-app://app/index.html`**（`apps/desktop/src/main.ts:26,173`），自定义 scheme 注册为 `standard: true, secure: true, supportFetchAPI: true`（同文件 45-50）——是真实元组源而非不透明源。**且 `localStorage` 在该源下已正常工作**（现有的皮肤选择与透明度就是靠它持久化的），不透明源连 `localStorage` 都会失效。这是 IndexedDB 可用的强证据；Web 侧的源已实测确认，见 §10.1。
 
 6. **现有代码把资源的 URL 前缀写死在模板里**：`client.js:140,146` 的 `backdropCss` 硬编码 `/skin-miku/${file}`，而 `index.mjs:7` 注册的 `ROUTE_PREFIX` 也是 `/skin-miku`。两者靠人工保持一致（`test/assets.test.mjs` 现在守着这个契约）。本设计要解掉这个耦合。
 
@@ -153,7 +153,7 @@
 
 **为什么必须 OKLCH 而非 HSL**：HSL 的 L 不是感知亮度——同样 L=0.5，黄色看起来远比蓝色亮。按固定 HSL L 夹，黄色系的 `lightAccent` 会亮到白字压不住、蓝色系又偏暗，同一算法在不同色相上给出差别很大的实际对比度。OKLCH 的 L 感知均匀，固定 L 才能让不同色相观感一致。
 
-代价：需手写 sRGB↔OKLCH 变换（sRGB→线性→LMS→OKLab→OKLCH 及逆变换，约 60 行矩阵运算）。零依赖可行。**OKLCH 往返必须单测**（见第 11 节）。
+代价：需手写 sRGB↔OKLCH 变换（sRGB→线性→LMS→OKLab→OKLCH 及逆变换，约 60 行矩阵运算）。零依赖可行。**OKLCH 往返必须单测**（见第 13 节）。
 
 ## 8. 对比度保底与降级
 
@@ -213,6 +213,35 @@ if (navigator.storage?.persist) void navigator.storage.persist()
 ```
 
 **localStorage 写失败要可见**：`localStorage.setItem` 在配额满或隐私模式下会抛异常。现有 `client.js:274`（存皮肤选择）与 `client.js:292`（存透明度）是裸调用，无 try/catch。索引写入必须包住并给用户明确反馈；**顺手把那两处裸调用也包上**——同一失败模式、同一文件、新代码就写在它们旁边，属范围内收尾。
+
+### 10.1 验证结果与源稳定性前提（2026-09-16）
+
+**IndexedDB 可用性已实测**（风险 1 清除）。在无头 Edge 中对 `http://127.0.0.1:3080` 这个源执行探针：
+
+```
+location.origin=http://127.0.0.1:3080
+indexedDB=object  storageManager=object
+open OK version=1
+PHASE1 roundtrip: size=8 type=image/png byte-identical=true
+PHASE2 cross-reload: stamp=1789530792368 size=8 type=image/png byte-identical=true
+quota=3.00GB usage=73728B
+```
+
+证明：该源的 IndexedDB 可开、**Blob 按字节原样往返**（`byte-identical=true`，正是本方案依赖的那件事）、**跨刷新留存**，配额 3.00GB。
+
+**残留限制（不得当作已验证）**：
+
+- 探针跑的是**本地合成的文档**，不是真实应用页面——它测的是**源级**存储能力，测不到应用页面自身是否做了手脚（如把插件放进 sandboxed iframe）。这一点由独立证据覆盖：插件写的是主文档的 `document.head`，且 `localStorage` 在主文档中确实工作；不透明源或沙箱 iframe 会让 `localStorage` 一并失效。
+- 跑在**无头 Edge**（`channel: 'msedge'`），非用户日常浏览器配置。
+- 要做应用级金标准验证，需重启 `dsh --profile web` 并在启动打印的带令牌 URL 上重跑探针。
+
+**源稳定性前提（实现与使用都必须知道）**：
+
+浏览器按 (scheme, host, port) 三元组隔离存储，因此皮肤库的存活依赖源不变：
+
+1. **端口默认 3080 且固定**（`packages/bundle/web-app/cordis.patch.yml:139`，`ctx.webStartup.port ?? 3080`），3080 被占用**不会**自动漂移；但 `--port 0` 会让 OS 随机分配（`packages/bundle/web-app/src/startup.ts:53` 明示）。**用 `--port 0` 或改端口 = 换源 = 整个皮肤库"消失"**（数据仍在磁盘上，只是绑定在旧源下）。
+2. **`localhost` 与 `127.0.0.1` 是不同的源**，即使端口相同。harness 打印并自动打开的是 `http://127.0.0.1:3080`（`packages/bundle/web-app/src/index.ts:80` 的 `LOOPBACK_HOST = '127.0.0.1'`）。用户若在两个主机名之间来回使用，存储会分裂——**现有 `localStorage` 里的皮肤选择与透明度今天就已经受此影响**。建议固定使用自动打开的那个地址。
+3. 这两个前提**无法在插件内修复**（插件无权选择源），只能在文档与用户须知中说明。
 
 ## 11. 切换器 UI（`switcher.js`）
 
@@ -300,17 +329,17 @@ if (navigator.storage?.persist) void navigator.storage.persist()
 
 | # | 风险 | 处理 |
 |---|---|---|
-| 1 | **IndexedDB 可用性未经验证**——本仓库首次使用 | **写功能代码前先验证**（见第 15 节第 1 步） |
+| 1 | ~~**IndexedDB 可用性未经验证**~~ **已清除**（2026-09-16） | 见 §10.1 的验证结果与残留限制 |
 | 2 | esbuild 提升 `require` 出 factory，只在运行时暴露 | 构建产物冒烟测试 |
 | 3 | `⋮` 浮层可能与 `shell.overlay` 的 `pointer-events`／裁切冲突 | UI 完成后在真实界面点一遍 |
 | 4 | `persist()` 可能被拒，存储仍可能被驱逐 | 启动孤儿清扫 + 选中款缺失即回退，**必须实现**，不能只写文档 |
 | 5 | `image.js` 解码／编码层无自动化测试 | 明确的手动验证缺口 |
 
-**风险 1 是唯一可能推翻整个方案的**：若 IndexedDB 在真实前端不可用，「只存浏览器本地」就断了，需退回宿主存储——那要加上传接口（`webServer.register` 的 handler 自己读流并设上限）与逐请求 `requestRejection` 鉴权，等于重做第 4–5 节。
+**风险 1 已清除**（§10.1 实测通过）：浏览器本地方案的地基成立，无需退回宿主存储。若将来发现某部署环境确实不可用（例如某天桌面端改用不透明源），退路是宿主存储——那要加上传接口（`webServer.register` 的 handler 自己读流并设上限）与逐请求 `requestRejection` 鉴权，等于重做第 4–5 节。届时应重新评估，而不是在本地存储上打补丁。
 
 ## 15. 实施顺序
 
-1. **验证 IndexedDB**（风险 1）——不通过就停下来商量，不要往下做
+1. ~~**验证 IndexedDB**~~ **已完成（2026-09-16），通过**——结果与残留限制见 §10.1
 2. `palette.js` + 测试（纯函数，TDD 最合适）
 3. 构建接线 + 冒烟测试（此时产物行为应与今天等价）
 4. `store.js` + 测试（注入 fake）
