@@ -134,9 +134,13 @@ function lightnessPenalty(lightness) {
  * @param image - RGBA pixel data (an `ImageData`, or any `{ data }`).
  * @returns the dominant colour as sRGB 0..255, or null when the image carries no
  *   usable hue (greyscale, or nothing opaque) -- the caller's cue to ask the
- *   user for a colour instead of inventing one.
+ *   user for a colour instead of inventing one. Unreadable pixels take the same
+ *   exit: "we could not tell" and "there is no hue" lead to the same place, and
+ *   the picker is a far better answer than a failed import.
  */
-export function extractDominantColor({ data }) {
+export function extractDominantColor(image) {
+	const data = image?.data;
+	if (data === undefined || data === null) return null;
 	const buckets = new Map();
 	for (let at = 0; at < data.length; at += 4) {
 		if (data[at + 3] < ALPHA_THRESHOLD) continue;
@@ -236,6 +240,13 @@ function formatRgb({ r, g, b }) {
  */
 function deriveAccent(primary, target) {
 	const base = srgbToOklch(primary);
+	if (!Number.isFinite(base.h) || !Number.isFinite(base.c)) {
+		// A non-finite primary cannot be searched toward: every candidate would be
+		// out of gamut and the loop below would never terminate. Chroma 0 at the
+		// target lightness is the honest answer -- a neutral accent -- and it keeps
+		// a bad colour from becoming a hung tab.
+		return linearToSrgbTriple(oklchToLinear({ l: target, c: 0, h: 0 }));
+	}
 	for (let step = 0; ; step += 1) {
 		// Math.max pins the final level to exactly 0: stepping by a float would
 		// otherwise skip it. Chroma 0 is in gamut at any lightness, so this
@@ -260,4 +271,39 @@ export function deriveAccents(primary) {
 		accents[key] = formatRgb(deriveAccent(primary, lightness));
 	}
 	return accents;
+}
+
+// ---- colour formatting ----------------------------------------------------
+// The picker speaks a different dialect from the token layer: an
+// `<input type="color">` reads and writes "#rrggbb", while accents are stored as
+// "r, g, b" so they interpolate straight into rgba(...). These convert between.
+
+/** The six-digit lowercase form a colour input reads and writes. */
+export function toHex({ r, g, b }) {
+	const pair = (channel) => Math.round(channel).toString(16).padStart(2, "0");
+	return `#${pair(r)}${pair(g)}${pair(b)}`;
+}
+
+/**
+ * Parse `#rrggbb`, case-insensitively.
+ * @throws {TypeError} when the string is not six hex digits. Handing back a
+ *   half-parsed colour would be worse than refusing: the chroma search in
+ *   {@link deriveAccent} steps toward zero and cannot reach it from NaN, so a
+ *   malformed colour would not merely look wrong, it would never return.
+ */
+export function fromHex(hex) {
+	if (typeof hex !== "string") throw new TypeError("fromHex: expected a colour string");
+	const digits = hex.trim().replace(/^#/, "");
+	if (!/^[0-9a-f]{6}$/i.test(digits)) throw new TypeError(`fromHex: not a #rrggbb colour: ${JSON.stringify(hex)}`);
+	return {
+		r: Number.parseInt(digits.slice(0, 2), 16),
+		g: Number.parseInt(digits.slice(2, 4), 16),
+		b: Number.parseInt(digits.slice(4, 6), 16),
+	};
+}
+
+/** Parse the `"r, g, b"` shape the token layer stores. */
+export function parseRgb(value) {
+	const [r, g, b] = value.split(",").map((part) => Number(part.trim()));
+	return { r, g, b };
 }
